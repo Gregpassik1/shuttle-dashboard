@@ -13,7 +13,7 @@ if uploaded_file:
 
     st.subheader("📊 Heatmap: Passenger Volume by Day and Time")
     heatmap_data = df.groupby(["day_of_week", "time_block"])["passenger_count"].sum().reset_index()
-    heatmap_pivot = heatmap_data.pivot("day_of_week", "time_block", "passenger_count")
+heatmap_pivot = heatmap_data.pivot(index="day_of_week", columns="time_block", values="passenger_count")
     st.dataframe(heatmap_pivot.fillna(0))
 
     st.subheader("📈 Line Chart: Volume by Hotel and Time Block")
