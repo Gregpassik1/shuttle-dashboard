@@ -1,59 +1,72 @@
-# shuttle_optimizer.py
+from pathlib import Path
 
-import pandas as pd
-import numpy as np
-import plotly.express as px
+# Updated full version of app.py that includes optimizer and visualization
+updated_app_code = """
 import streamlit as st
+import pandas as pd
+import plotly.express as px
+from shuttle_optimizer import optimize_schedule
 
-SHUTTLE_CAPACITY = 14
-MAX_VEHICLES = 6
+st.set_page_config(layout="wide")
+st.title("🚌 Shuttle Volume Dashboard + Optimizer")
 
-def optimize_schedule(day_demand_series):
-    slots = [0]*96
-    half_hour_demand = [0]*48
-    for i, demand in enumerate(day_demand_series):
-        half_hour_demand[i] = demand
-    for half_idx in range(48):
-        demand = half_hour_demand[half_idx]
-        slot1 = half_idx*2
-        slot2 = half_idx*2 + 1
-        if demand > 0:
-            if half_idx == 0:
-                slots[slot1] = max(slots[slot1], 1)
-            else:
-                prev_slot2 = half_idx*2 - 1
-                if slots[prev_slot2] == 0:
-                    slots[slot1] = max(slots[slot1], 1)
-            if slots[slot1] == 0 and slots[slot2] == 0:
-                slots[slot1] = 1
-        if demand == 0 and half_idx < 47 and half_hour_demand[half_idx+1] > 0:
-            prev_slot2 = half_idx*2 - 1
-            if (half_idx == 0 or slots[prev_slot2] == 0):
-                slots[slot2] = max(slots[slot2], 1)
-        if demand > 0:
-            scheduled_in_half = slots[slot1] + slots[slot2]
-            seats = scheduled_in_half * SHUTTLE_CAPACITY
-            if seats < demand:
-                extra_needed = int(np.ceil((demand - seats) / SHUTTLE_CAPACITY))
-                for _ in range(extra_needed):
-                    if slots[slot1] <= slots[slot2]:
-                        slots[slot1] += 1
-                    else:
-                        slots[slot2] += 1
-                    if slots[slot1] + slots[slot2] >= MAX_VEHICLES:
-                        break
-    for i in range(96):
-        if i < 95:
-            half_idx_i = i//2
-            half_idx_next = (i+1)//2
-            if slots[i] == 0 and slots[i+1] == 0:
-                if half_hour_demand[half_idx_i] > 0 or half_hour_demand[half_idx_next] > 0:
-                    slots[i+1] = 1
-    schedule = []
-    for idx, count in enumerate(slots):
-        if count > 0:
-            hour = idx // 4
-            minute = (idx % 4) * 15
-            time_label = f"{hour:02d}:{minute:02d}"
-            schedule.append((time_label, count))
-    return schedule
+uploaded_file = st.file_uploader("Upload shuttle Excel file", type=["xlsx"])
+
+if uploaded_file:
+    df = pd.read_excel(uploaded_file)
+    df["date"] = pd.to_datetime(df["date"])
+    df["day_of_week"] = df["date"].dt.day_name()
+
+    st.subheader("📊 Raw Passenger Volume (Grouped by Pickup & Time Block)")
+    grouped = df.groupby(["pickup_location", "time_block"])["passenger_count"].sum().reset_index()
+    pivot = grouped.pivot(index="pickup_location", columns="time_block", values="passenger_count").fillna(0)
+    st.dataframe(pivot)
+
+    st.subheader("📈 Passenger Volume by Day of Week and Time Block")
+    heatmap_data = df.groupby(["day_of_week", "time_block"])["passenger_count"].sum().reset_index()
+    heatmap_pivot = heatmap_data.pivot(index="day_of_week", columns="time_block", values="passenger_count").fillna(0)
+    st.dataframe(heatmap_pivot)
+
+    fig = px.imshow(
+        heatmap_pivot,
+        labels=dict(x="Time Block", y="Day of Week", color="Passengers"),
+        x=heatmap_pivot.columns,
+        y=heatmap_pivot.index,
+        aspect="auto",
+        color_continuous_scale="Viridis"
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+    st.subheader("⚙️ Select Day to Optimize Shuttle Schedule")
+    selected_day = st.selectbox("Day of Week", sorted(df["day_of_week"].unique()))
+
+    day_df = df[df["day_of_week"] == selected_day]
+    ordered_blocks = sorted(day_df["time_block"].unique())
+    demand_series = (
+        day_df.groupby("time_block")["passenger_count"]
+        .sum()
+        .reindex(ordered_blocks, fill_value=0)
+        .tolist()
+    )
+
+    if demand_series:
+        optimized_schedule = optimize_schedule(demand_series)
+
+        st.subheader("✅ Optimized Shuttle Schedule")
+        schedule_df = pd.DataFrame(optimized_schedule, columns=["Time", "Shuttles Required"])
+        st.dataframe(schedule_df)
+
+        fig_sched = px.bar(schedule_df, x="Time", y="Shuttles Required", title="Optimized Shuttle Dispatch")
+        st.plotly_chart(fig_sched, use_container_width=True)
+    else:
+        st.info("No data available for selected day.")
+else:
+    st.warning("Please upload a .xlsx file to get started.")
+"""
+
+# Save updated app.py
+app_file_path = "/mnt/data/app.py"
+Path(app_file_path).write_text(updated_app_code)
+
+app_file_path
+
